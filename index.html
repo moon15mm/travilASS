@@ -345,10 +345,27 @@ function addMarker(lat, lng, name, rank, color) {
   return m;
 }
 
-// ── Photo helper (Unsplash Source) ──
-function hotelPhoto(name, city) {
-  const q = encodeURIComponent(`${name} hotel ${city}`);
-  return `https://source.unsplash.com/400x240/?hotel,${encodeURIComponent(city)}`;
+// ── Photo helper (Wikimedia / fallback) ──
+const cityPhotos = {
+  bali:['https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Pura_Ulun_Danu_Bratan%2C_Bali.jpg/640px-Pura_Ulun_Danu_Bratan%2C_Bali.jpg'],
+  dubai:['https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Dubai_Marina_Skyline.jpg/640px-Dubai_Marina_Skyline.jpg'],
+  paris:['https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg/480px-Tour_Eiffel_Wikimedia_Commons.jpg'],
+  istanbul:['https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Blue_Mosque_Istanbul.jpg/640px-Blue_Mosque_Istanbul.jpg'],
+  london:['https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/London_Skyline_%28125508655%29.jpeg/640px-London_Skyline_%28125508655%29.jpeg'],
+  maldives:['https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Maldives_beach.jpg/640px-Maldives_beach.jpg'],
+};
+const fallbackImgs = [
+  'https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?w=400&h=240&fit=crop',
+  'https://images.pexels.com/photos/1134176/pexels-photo-1134176.jpeg?w=400&h=240&fit=crop',
+  'https://images.pexels.com/photos/164595/pexels-photo-164595.jpeg?w=400&h=240&fit=crop',
+  'https://images.pexels.com/photos/338504/pexels-photo-338504.jpeg?w=400&h=240&fit=crop',
+  'https://images.pexels.com/photos/261102/pexels-photo-261102.jpeg?w=400&h=240&fit=crop',
+];
+function hotelPhoto(name, city, idx) {
+  const key = (city||'').toLowerCase().split(/[\s,]/)[0];
+  const cityArr = cityPhotos[key];
+  if (cityArr) return cityArr[0];
+  return fallbackImgs[idx % fallbackImgs.length];
 }
 
 // ── Hotels strip ──
@@ -363,7 +380,7 @@ function renderHotelsStrip() {
     const card = document.createElement('div');
     card.className = 'hcard' + (i === 0 ? ' active' : '');
     card.innerHTML = `
-      <img class="hcard-img" src="${hotelPhoto(h.name, city)}" alt="${h.name}"
+      <img class="hcard-img" src="${hotelPhoto(h.name, city, i)}" alt="${h.name}"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div class="hcard-img-placeholder" style="display:none">🏨</div>
       <div class="hcard-body">
@@ -382,13 +399,33 @@ function renderHotelsStrip() {
   });
 }
 
-// ── Geocode via Nominatim ──
-async function geocode(query) {
+// ── Geocode via Nominatim (مع retry ومحاولات متعددة) ──
+async function geocodeSingle(query) {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
     const d = await r.json();
     if (d.length) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
   } catch {}
+  return null;
+}
+
+async function geocode(hotelName, city) {
+  // محاولة 1: اسم الفندق + المدينة
+  let loc = await geocodeSingle(`${hotelName} ${city}`);
+  if (loc) return loc;
+  // محاولة 2: اسم الفندق فقط
+  if (hotelName) {
+    loc = await geocodeSingle(hotelName);
+    if (loc) return loc;
+  }
+  // محاولة 3: المدينة فقط كـ fallback
+  if (city) {
+    loc = await geocodeSingle(city);
+    if (loc) return loc;
+  }
   return null;
 }
 
@@ -488,9 +525,12 @@ function buildUserMsg() {
 
 // ── Locate hotel on map ──
 window.locateHotel = async function(name, city) {
-  const q = `${name} hotel ${city}`;
-  const loc = await geocode(q);
-  if (!loc) { alert('لم أتمكن من تحديد الموقع'); return; }
+  const loc = await geocode(name, city);
+  if (!loc) {
+    // fallback: افتح Google Maps في تاب جديد
+    window.open(`https://www.google.com/maps/search/${encodeURIComponent(name+' '+city)}`, '_blank');
+    return;
+  }
   const dest = document.getElementById('dest').value || city;
   document.getElementById('mapCity').textContent = dest;
   if (!map) initMap(loc.lat, loc.lng, 15);
@@ -509,13 +549,13 @@ async function processHotelsFromResponse(text) {
   document.getElementById('mapCity').textContent = city;
 
   // Geocode city center first
-  const cityLoc = await geocode(city);
+  const cityLoc = await geocode('', city);
   if (cityLoc) initMap(cityLoc.lat, cityLoc.lng, 13);
 
   // Geocode each hotel
   for (let i = 0; i < hotels.length; i++) {
     const h = hotels[i];
-    const loc = await geocode(`${h.name} hotel ${city}`);
+    const loc = await geocode(h.name, city);
     if (loc) {
       h.lat = loc.lat; h.lng = loc.lng;
       if (!map) initMap(loc.lat, loc.lng, 13);
