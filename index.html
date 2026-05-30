@@ -295,12 +295,23 @@ function changeKey() {
   document.getElementById('apiKey').focus();
 }
 
+// ضع مفتاحك هنا إذا أردت أن يعمل تلقائياً لجميع المستخدمين
+// تأكد أن الـ repo على GitHub خاص (Private) قبل ذلك!
+const HARDCODED_KEY = '';   // مثال: 'sk-ant-xxxx...'
+
 function getKey() {
-  return localStorage.getItem(KEY_STORE) || document.getElementById('apiKey').value.trim();
+  return HARDCODED_KEY || localStorage.getItem(KEY_STORE) || document.getElementById('apiKey').value.trim();
 }
 
 // تحميل المفتاح عند فتح الصفحة
-window.addEventListener('DOMContentLoaded', loadSavedKey);
+window.addEventListener('DOMContentLoaded', () => {
+  if (HARDCODED_KEY) {
+    // إخفاء قسم المفتاح كلياً إذا كان مضمّناً في الكود
+    document.getElementById('apiCard').style.display = 'none';
+  } else {
+    loadSavedKey();
+  }
+});
 
 // ── Chip toggle ──
 document.querySelectorAll('#starChips .chip').forEach(c =>
