@@ -128,6 +128,10 @@
     .api-notice { background:rgba(201,168,76,.07);border:1px dashed rgba(201,168,76,.3);border-radius:11px;padding:13px 15px;font-size:12px;color:var(--muted);line-height:1.6; }
     .api-notice a { color:var(--gold);text-decoration:none; }
     .api-notice input { margin-top:7px;font-size:12px;padding:7px 11px;letter-spacing:1px; }
+    .key-saved { display:flex;align-items:center;justify-content:space-between;margin-top:8px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);border-radius:8px;padding:7px 12px; }
+    .key-saved span { font-size:12px;color:var(--gold); }
+    .key-change-btn { font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer;font-family:inherit;transition:all .2s; }
+    .key-change-btn:hover { border-color:var(--gold);color:var(--gold); }
 
     .stars { color:var(--gold);letter-spacing:-1px; }
 
@@ -152,10 +156,21 @@
 
   <!-- Sidebar -->
   <aside class="sidebar">
-    <div class="card api-notice">
+    <div class="card api-notice" id="apiCard">
       <div style="font-weight:600;color:var(--gold);margin-bottom:6px;">🔑 مفتاح الذكاء الاصطناعي</div>
-      احصل على مفتاح من <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
-      <input type="password" id="apiKey" placeholder="sk-ant-..." />
+
+      <!-- حالة: المفتاح محفوظ -->
+      <div class="key-saved" id="keySavedRow" style="display:none">
+        <span>✅ المفتاح محفوظ على جهازك</span>
+        <button class="key-change-btn" onclick="changeKey()">تغيير</button>
+      </div>
+
+      <!-- حالة: إدخال المفتاح -->
+      <div id="keyInputRow">
+        احصل على مفتاح من <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+        <input type="password" id="apiKey" placeholder="sk-ant-..." oninput="saveKeyLive(this.value)" />
+        <div style="font-size:11px;color:var(--muted);margin-top:5px;">🔒 يُحفظ فقط على متصفحك ولا يُرسل لأي خادم</div>
+      </div>
     </div>
 
     <div class="card">
@@ -244,6 +259,42 @@
 </div>
 
 <script>
+// ── API Key: حفظ واسترجاع ──
+const KEY_STORE = 'hf_api_key';
+
+function loadSavedKey() {
+  const saved = localStorage.getItem(KEY_STORE);
+  if (saved) {
+    document.getElementById('apiKey').value = saved;
+    document.getElementById('keySavedRow').style.display = 'flex';
+    document.getElementById('keyInputRow').style.display  = 'none';
+  }
+}
+
+function saveKeyLive(val) {
+  const trimmed = val.trim();
+  if (trimmed.startsWith('sk-ant-') && trimmed.length > 20) {
+    localStorage.setItem(KEY_STORE, trimmed);
+    document.getElementById('keySavedRow').style.display = 'flex';
+    document.getElementById('keyInputRow').style.display  = 'none';
+  }
+}
+
+function changeKey() {
+  localStorage.removeItem(KEY_STORE);
+  document.getElementById('apiKey').value = '';
+  document.getElementById('keySavedRow').style.display = 'none';
+  document.getElementById('keyInputRow').style.display  = 'block';
+  document.getElementById('apiKey').focus();
+}
+
+function getKey() {
+  return localStorage.getItem(KEY_STORE) || document.getElementById('apiKey').value.trim();
+}
+
+// تحميل المفتاح عند فتح الصفحة
+window.addEventListener('DOMContentLoaded', loadSavedKey);
+
 // ── Chip toggle ──
 document.querySelectorAll('#starChips .chip').forEach(c =>
   c.addEventListener('click', () => {
@@ -484,7 +535,7 @@ async function processHotelsFromResponse(text) {
 
 // ── Search ──
 async function startSearch() {
-  const key = document.getElementById('apiKey').value.trim();
+  const key = getKey();
   if (!key) { alert('الرجاء إدخال مفتاح API أولاً'); return; }
   if (!document.getElementById('dest').value.trim()) { alert('الرجاء تحديد الوجهة'); return; }
 
@@ -500,7 +551,7 @@ async function startSearch() {
 
 // ── Followup ──
 async function sendFollowup() {
-  const key   = document.getElementById('apiKey').value.trim();
+  const key   = getKey();
   const input = document.getElementById('followInput');
   const text  = input.value.trim();
   if (!key)  { alert('الرجاء إدخال مفتاح API'); return; }
