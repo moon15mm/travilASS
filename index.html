@@ -466,6 +466,42 @@ function parseHotels(text) {
   return hotels;
 }
 
+// ── Cache البحث في localStorage ──
+const CACHE_STORE = 'hf_search_cache';
+
+function getCacheKey() {
+  const dest     = document.getElementById('dest').value.trim().toLowerCase();
+  const checkin  = document.getElementById('checkin').value;
+  const checkout = document.getElementById('checkout').value;
+  const bMin     = document.getElementById('budgetMin').value;
+  const bMax     = document.getElementById('budgetMax').value;
+  const stars    = [...document.querySelectorAll('#starChips .chip.active')].map(c=>c.dataset.val).join(',');
+  const amens    = [...document.querySelectorAll('#amenChips .chip.active')].map(c=>c.dataset.val).join(',');
+  return btoa(encodeURIComponent(`${dest}|${checkin}|${checkout}|${bMin}|${bMax}|${stars}|${amens}`));
+}
+
+function getCache(key) {
+  try {
+    const store = JSON.parse(localStorage.getItem(CACHE_STORE) || '{}');
+    const entry = store[key];
+    if (!entry) return null;
+    // الكاش ينتهي بعد 24 ساعة
+    if (Date.now() - entry.ts > 86400000) { delete store[key]; localStorage.setItem(CACHE_STORE, JSON.stringify(store)); return null; }
+    return entry.reply;
+  } catch { return null; }
+}
+
+function setCache(key, reply) {
+  try {
+    const store = JSON.parse(localStorage.getItem(CACHE_STORE) || '{}');
+    // احتفظ بآخر 10 نتائج فقط
+    const keys = Object.keys(store);
+    if (keys.length >= 10) delete store[keys[0]];
+    store[key] = { reply, ts: Date.now() };
+    localStorage.setItem(CACHE_STORE, JSON.stringify(store));
+  } catch {}
+}
+
 // ── Chat helpers ──
 let conversationHistory = [];
 
@@ -605,13 +641,26 @@ async function startSearch() {
   if (!document.getElementById('dest').value.trim()) { alert('الرجاء تحديد الوجهة'); return; }
 
   const userMsg = buildUserMsg();
+  const cacheKey = getCacheKey();
+  const cached  = getCache(cacheKey);
+
   conversationHistory = [];
   document.getElementById('chatBox').innerHTML = '';
   document.getElementById('hotelsStrip').style.display = 'none';
-
   appendMsg('user', userMsg.replace(/\n/g,'<br/>'));
+
+  if (cached) {
+    // نتيجة محفوظة — بدون استدعاء API
+    conversationHistory.push({ role:'user', content:userMsg });
+    conversationHistory.push({ role:'assistant', content:cached });
+    appendMsg('ai', cached + '<div style="margin-top:8px;font-size:11px;color:var(--muted)">⚡ من الكاش — لم يُستهلك رصيد</div>');
+    await processHotelsFromResponse(cached);
+    setBusy(false);
+    return;
+  }
+
   conversationHistory.push({ role:'user', content:userMsg });
-  await callAPI(key);
+  await callAPI(key, cacheKey);
 }
 
 // ── Followup ──
@@ -633,7 +682,7 @@ document.getElementById('followInput').addEventListener('keydown', e => {
 });
 
 // ── API ──
-async function callAPI(apiKey) {
+async function callAPI(apiKey, cacheKey = null) {
   setBusy(true);
   showTyping();
   try {
@@ -646,8 +695,8 @@ async function callAPI(apiKey) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-8',
-        max_tokens: 2048,
+        model: 'claude-haiku-4-5',   // أرخص 20x من Opus — كافٍ للفنادق
+        max_tokens: 1200,
         system: buildSystemPrompt(),
         messages: conversationHistory
       })
@@ -656,6 +705,8 @@ async function callAPI(apiKey) {
     const data  = await res.json();
     const reply = data.content[0].text;
     conversationHistory.push({ role:'assistant', content:reply });
+    // احفظ نتيجة البحث الأولى في الكاش فقط (ليس المتابعة)
+    if (cacheKey) setCache(cacheKey, reply);
     removeTyping();
     appendMsg('ai', reply);
     await processHotelsFromResponse(reply);
